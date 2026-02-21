@@ -15,3 +15,20 @@ Kindle Web Reader (`read.amazon.co.jp`, `read.amazon.com`) の本文を横書き
 - 初期状態は ON です。
 - 設定は `chrome.storage.sync` に保存されます。
 - Kindle 側の DOM 変更により、将来セレクタの調整が必要になる場合があります。
+
+
+## 不具合時に確認したい情報
+
+「横書きにならない」場合、次の情報があると原因特定が早くなります。
+
+- 開いている Kindle Web Reader のURL（`read.amazon.co.jp` / `read.amazon.com` 以外かどうか）
+- DevTools Console でのエラー
+- DevTools Elements で本文要素に `writing-mode: vertical-rl` が残っているか
+- 拡張ポップアップのトグル状態（ON/OFF）
+- Kindle ページ遷移直後だけ効かないか、常時効かないか
+
+必要なら以下の snippet を Console で実行して、現在ページに拡張スタイルが注入されているか確認できます。
+
+```js
+Boolean(document.getElementById("kindle-horizontal-style"));
+```
