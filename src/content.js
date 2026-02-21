@@ -6,12 +6,15 @@ let applyTimer = null;
 const TARGET_SELECTORS = [
   ".kg-full-page-text-layer",
   ".kg-text-layer",
+  "[class*='content']",
+  "[class*='Content']",
   "[class*='textLayer']",
   "[class*='TextLayer']",
   "[role='document']",
   "[data-testid*='text']",
   "[data-aid*='text']"
 ].join(",\n    ");
+const APPLY_RETRY_MS = 1200;
 
 function ensureHorizontalStyle(enabled) {
   const existing = document.getElementById(STYLE_ID);
@@ -32,14 +35,6 @@ function ensureHorizontalStyle(enabled) {
   style.textContent = `
     :root {
       --khr-inline-size: min(72ch, 90vw);
-    }
-
-    [style*="vertical-rl"],
-    [style*="vertical-lr"],
-    [style*="writing-mode"] {
-      writing-mode: horizontal-tb !important;
-      text-orientation: mixed !important;
-      direction: ltr !important;
     }
 
     ${TARGET_SELECTORS} {
@@ -101,12 +96,7 @@ function applyHorizontalToDetectedElements() {
   const candidates = [];
 
   getCandidateRoots().forEach((root) => {
-    if (!seen.has(root)) {
-      seen.add(root);
-      candidates.push(root);
-    }
-
-    root.querySelectorAll("*").forEach((node) => {
+    root.querySelectorAll(TARGET_SELECTORS).forEach((node) => {
       if (seen.has(node)) {
         return;
       }
@@ -127,7 +117,13 @@ function applyHorizontalToDetectedElements() {
   });
 
   if (matchCount === 0) {
-    console.debug("[kindle-horizontal] No vertical writing-mode elements detected.");
+    console.debug("[kindle-horizontal] No target text nodes detected yet.");
+
+    window.setTimeout(() => {
+      if (document.getElementById(STYLE_ID)) {
+        applyHorizontalToDetectedElements();
+      }
+    }, APPLY_RETRY_MS);
   }
 }
 
