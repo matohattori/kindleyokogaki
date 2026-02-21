@@ -1,20 +1,28 @@
 const STYLE_ID = "kindle-horizontal-style";
 const FORCE_CLASS = "khr-force-horizontal";
+const DEBUG_PREFIX = "[kindle-horizontal]";
 let observer = null;
 let applyTimer = null;
+let retryTimer = null;
+let retryCount = 0;
 
 const TARGET_SELECTORS = [
   ".kg-full-page-text-layer",
   ".kg-text-layer",
+  ".kg-content",
+  "[data-testid*='content']",
   "[class*='content']",
   "[class*='Content']",
   "[class*='textLayer']",
   "[class*='TextLayer']",
+  "[class*='bookText']",
+  "[class*='BookText']",
   "[role='document']",
   "[data-testid*='text']",
   "[data-aid*='text']"
 ].join(",\n    ");
 const APPLY_RETRY_MS = 1200;
+const MAX_RETRY_COUNT = 12;
 
 function ensureHorizontalStyle(enabled) {
   const existing = document.getElementById(STYLE_ID);
@@ -59,6 +67,11 @@ function ensureHorizontalStyle(enabled) {
 }
 
 function clearForcedClasses() {
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+
   getCandidateRoots().forEach((root) => {
     if (root.nodeType === Node.ELEMENT_NODE && root.classList?.contains(FORCE_CLASS)) {
       root.classList.remove(FORCE_CLASS);
@@ -95,6 +108,13 @@ function getCandidateRoots() {
     collectShadowRoots(root).forEach((shadowRoot) => discovered.push(shadowRoot));
   });
 
+  document.querySelectorAll("iframe").forEach((frame) => {
+    const frameDocument = frame.contentDocument;
+    if (frameDocument?.body) {
+      discovered.push(frameDocument.body);
+    }
+  });
+
   return [...new Set(discovered)];
 }
 
@@ -121,25 +141,17 @@ function collectShadowRoots(root) {
   return shadowRoots;
 }
 
-function applyHorizontalToDetectedElements() {
-  if (!document.getElementById(STYLE_ID)) {
-    return;
-  }
-
-  clearForcedClasses();
-
+function collectCandidateElements() {
   const seen = new Set();
   const candidates = [];
 
   getCandidateRoots().forEach((root) => {
-    if (root.nodeType === Node.ELEMENT_NODE && root.matches?.(TARGET_SELECTORS)) {
-      if (!seen.has(root)) {
-        seen.add(root);
-        candidates.push(root);
-      }
+    if (root.nodeType === Node.ELEMENT_NODE && root.matches?.(TARGET_SELECTORS) && !seen.has(root)) {
+      seen.add(root);
+      candidates.push(root);
     }
 
-    root.querySelectorAll(TARGET_SELECTORS).forEach((node) => {
+    root.querySelectorAll?.(TARGET_SELECTORS).forEach((node) => {
       if (seen.has(node)) {
         return;
       }
@@ -149,9 +161,45 @@ function applyHorizontalToDetectedElements() {
     });
   });
 
+  if (candidates.length > 0) {
+    return candidates;
+  }
+
+  const fallbackSelectors = [
+    "article",
+    "section",
+    "p",
+    "[class*='reader']",
+    "[class*='Reader']"
+  ].join(", ");
+
+  getCandidateRoots().forEach((root) => {
+    root.querySelectorAll?.(fallbackSelectors).forEach((node) => {
+      if (seen.has(node) || node.textContent?.trim().length < 40) {
+        return;
+      }
+
+      seen.add(node);
+      candidates.push(node);
+    });
+  });
+
+  return candidates;
+}
+
+function applyHorizontalToDetectedElements() {
+  if (!document.getElementById(STYLE_ID)) {
+    return;
+  }
+
+  clearForcedClasses();
+  const candidates = collectCandidateElements();
+
   let matchCount = 0;
   candidates.forEach((element) => {
-    if (!hasVerticalWritingMode(element)) {
+    const className = typeof element.className === "string" ? element.className.toLowerCase() : "";
+
+    if (!hasVerticalWritingMode(element) && !className.includes("text")) {
       return;
     }
 
@@ -160,14 +208,25 @@ function applyHorizontalToDetectedElements() {
   });
 
   if (matchCount === 0) {
-    console.debug("[kindle-horizontal] No target text nodes detected yet.");
+    retryCount += 1;
 
-    window.setTimeout(() => {
+    if (retryCount > MAX_RETRY_COUNT) {
+      console.debug(`${DEBUG_PREFIX} No target text nodes were detected after retries.`);
+      return;
+    }
+
+    console.debug(`${DEBUG_PREFIX} No target text nodes detected yet (retry ${retryCount}/${MAX_RETRY_COUNT}).`);
+
+    retryTimer = window.setTimeout(() => {
+      retryTimer = null;
       if (document.getElementById(STYLE_ID)) {
         applyHorizontalToDetectedElements();
       }
     }, APPLY_RETRY_MS);
+    return;
   }
+
+  retryCount = 0;
 }
 
 function scheduleApplyHorizontal() {
@@ -217,6 +276,13 @@ function startObserver() {
 function stopObserver() {
   observer?.disconnect();
   observer = null;
+
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+
+  retryCount = 0;
 }
 
 function loadInitialSetting() {
