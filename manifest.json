@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "Kindle Web Horizontal Reader",
+  "version": "1.0.0",
+  "description": "Kindle Web Reader の本文を横書き表示に切り替える拡張。",
+  "permissions": [
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://read.amazon.co.jp/*",
+    "https://read.amazon.com/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "action": {
+    "default_title": "Kindle 横書き切り替え",
+    "default_popup": "src/popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://read.amazon.co.jp/*",
+        "https://read.amazon.com/*"
+      ],
+      "js": [
+        "src/content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ]
+}
