@@ -1,10 +1,22 @@
 const STYLE_ID = "kindle-horizontal-style";
+let observer = null;
+
+const TARGET_SELECTORS = [
+  ".kg-full-page-text-layer",
+  ".kg-text-layer",
+  "[class*='textLayer']",
+  "[class*='TextLayer']",
+  "[role='document']",
+  "[data-testid*='text']",
+  "[data-aid*='text']"
+].join(",\n    ");
 
 function ensureHorizontalStyle(enabled) {
   const existing = document.getElementById(STYLE_ID);
 
   if (!enabled) {
     existing?.remove();
+    stopObserver();
     return;
   }
 
@@ -27,11 +39,7 @@ function ensureHorizontalStyle(enabled) {
       direction: ltr !important;
     }
 
-    .kg-full-page-text-layer,
-    .kg-text-layer,
-    [class*="textLayer"],
-    [class*="TextLayer"],
-    [role="document"] {
+    ${TARGET_SELECTORS} {
       writing-mode: horizontal-tb !important;
       text-orientation: mixed !important;
       line-height: 1.8 !important;
@@ -42,6 +50,34 @@ function ensureHorizontalStyle(enabled) {
   `;
 
   document.documentElement.appendChild(style);
+  startObserver();
+}
+
+function startObserver() {
+  if (observer) {
+    return;
+  }
+
+  observer = new MutationObserver(() => {
+    const style = document.getElementById(STYLE_ID);
+    if (!style) {
+      return;
+    }
+
+    if (!document.documentElement.contains(style)) {
+      document.documentElement.appendChild(style);
+    }
+  });
+
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true
+  });
+}
+
+function stopObserver() {
+  observer?.disconnect();
+  observer = null;
 }
 
 function loadInitialSetting() {
