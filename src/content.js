@@ -1,5 +1,7 @@
 const STYLE_ID = "kindle-horizontal-style";
+const FORCE_CLASS = "khr-force-horizontal";
 let observer = null;
+let applyTimer = null;
 
 const TARGET_SELECTORS = [
   ".kg-full-page-text-layer",
@@ -16,6 +18,7 @@ function ensureHorizontalStyle(enabled) {
 
   if (!enabled) {
     existing?.remove();
+    clearForcedClasses();
     stopObserver();
     return;
   }
@@ -47,10 +50,96 @@ function ensureHorizontalStyle(enabled) {
       margin-inline: auto !important;
       white-space: normal !important;
     }
+
+    .${FORCE_CLASS} {
+      writing-mode: horizontal-tb !important;
+      text-orientation: mixed !important;
+      direction: ltr !important;
+    }
   `;
 
   document.documentElement.appendChild(style);
+  applyHorizontalToDetectedElements();
   startObserver();
+}
+
+function clearForcedClasses() {
+  document.querySelectorAll(`.${FORCE_CLASS}`).forEach((element) => {
+    element.classList.remove(FORCE_CLASS);
+  });
+}
+
+function hasVerticalWritingMode(element) {
+  const writingMode = getComputedStyle(element).writingMode || "";
+  return writingMode.includes("vertical");
+}
+
+function getCandidateRoots() {
+  const roots = [document.body];
+  const extraRoots = document.querySelectorAll([
+    "main",
+    "[role='main']",
+    "[role='document']",
+    "[class*='reader']",
+    "[class*='Reader']",
+    "[class*='page']",
+    "[class*='Page']"
+  ].join(", "));
+
+  extraRoots.forEach((node) => roots.push(node));
+  return [...new Set(roots.filter(Boolean))];
+}
+
+function applyHorizontalToDetectedElements() {
+  if (!document.getElementById(STYLE_ID)) {
+    return;
+  }
+
+  clearForcedClasses();
+
+  const seen = new Set();
+  const candidates = [];
+
+  getCandidateRoots().forEach((root) => {
+    if (!seen.has(root)) {
+      seen.add(root);
+      candidates.push(root);
+    }
+
+    root.querySelectorAll("*").forEach((node) => {
+      if (seen.has(node)) {
+        return;
+      }
+
+      seen.add(node);
+      candidates.push(node);
+    });
+  });
+
+  let matchCount = 0;
+  candidates.forEach((element) => {
+    if (!hasVerticalWritingMode(element)) {
+      return;
+    }
+
+    element.classList.add(FORCE_CLASS);
+    matchCount += 1;
+  });
+
+  if (matchCount === 0) {
+    console.debug("[kindle-horizontal] No vertical writing-mode elements detected.");
+  }
+}
+
+function scheduleApplyHorizontal() {
+  if (applyTimer) {
+    clearTimeout(applyTimer);
+  }
+
+  applyTimer = setTimeout(() => {
+    applyTimer = null;
+    applyHorizontalToDetectedElements();
+  }, 150);
 }
 
 function startObserver() {
@@ -67,6 +156,8 @@ function startObserver() {
     if (!document.documentElement.contains(style)) {
       document.documentElement.appendChild(style);
     }
+
+    scheduleApplyHorizontal();
   });
 
   observer.observe(document.documentElement, {
