@@ -9,10 +9,6 @@ let retryCount = 0;
 const TARGET_SELECTORS = [
   ".kg-full-page-text-layer",
   ".kg-text-layer",
-  ".kg-content",
-  "[data-testid*='content']",
-  "[class*='content']",
-  "[class*='Content']",
   "[class*='textLayer']",
   "[class*='TextLayer']",
   "[class*='bookText']",
@@ -23,6 +19,7 @@ const TARGET_SELECTORS = [
 ].join(",\n    ");
 const APPLY_RETRY_MS = 1200;
 const MAX_RETRY_COUNT = 12;
+const MIN_TEXT_LENGTH = 60;
 
 function ensureHorizontalStyle(enabled) {
   const existing = document.getElementById(STYLE_ID);
@@ -88,6 +85,20 @@ function hasVerticalWritingMode(element) {
   return writingMode.includes("vertical");
 }
 
+function hasReadableText(element) {
+  const textLength = element.textContent?.replace(/\s+/g, "").length || 0;
+  if (textLength < MIN_TEXT_LENGTH) {
+    return false;
+  }
+
+  if (element.children.length === 0) {
+    return true;
+  }
+
+  const paragraphLikeChildren = element.querySelectorAll("p, span, ruby, rt, rb").length;
+  return paragraphLikeChildren > 0;
+}
+
 function getCandidateRoots() {
   const roots = [document.body];
   const extraRoots = document.querySelectorAll([
@@ -109,9 +120,13 @@ function getCandidateRoots() {
   });
 
   document.querySelectorAll("iframe").forEach((frame) => {
-    const frameDocument = frame.contentDocument;
-    if (frameDocument?.body) {
-      discovered.push(frameDocument.body);
+    try {
+      const frameDocument = frame.contentDocument;
+      if (frameDocument?.body) {
+        discovered.push(frameDocument.body);
+      }
+    } catch (_error) {
+      // Cross-origin iframe; skip safely.
     }
   });
 
@@ -175,7 +190,7 @@ function collectCandidateElements() {
 
   getCandidateRoots().forEach((root) => {
     root.querySelectorAll?.(fallbackSelectors).forEach((node) => {
-      if (seen.has(node) || node.textContent?.trim().length < 40) {
+      if (seen.has(node) || !hasReadableText(node)) {
         return;
       }
 
@@ -198,8 +213,9 @@ function applyHorizontalToDetectedElements() {
   let matchCount = 0;
   candidates.forEach((element) => {
     const className = typeof element.className === "string" ? element.className.toLowerCase() : "";
+    const isTextLike = className.includes("text") && hasReadableText(element);
 
-    if (!hasVerticalWritingMode(element) && !className.includes("text")) {
+    if (!hasVerticalWritingMode(element) && !isTextLike) {
       return;
     }
 
