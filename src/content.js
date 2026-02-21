@@ -59,8 +59,14 @@ function ensureHorizontalStyle(enabled) {
 }
 
 function clearForcedClasses() {
-  document.querySelectorAll(`.${FORCE_CLASS}`).forEach((element) => {
-    element.classList.remove(FORCE_CLASS);
+  getCandidateRoots().forEach((root) => {
+    if (root.nodeType === Node.ELEMENT_NODE && root.classList?.contains(FORCE_CLASS)) {
+      root.classList.remove(FORCE_CLASS);
+    }
+
+    root.querySelectorAll(`.${FORCE_CLASS}`).forEach((element) => {
+      element.classList.remove(FORCE_CLASS);
+    });
   });
 }
 
@@ -82,7 +88,37 @@ function getCandidateRoots() {
   ].join(", "));
 
   extraRoots.forEach((node) => roots.push(node));
-  return [...new Set(roots.filter(Boolean))];
+
+  const discovered = [...new Set(roots.filter(Boolean))];
+
+  discovered.forEach((root) => {
+    collectShadowRoots(root).forEach((shadowRoot) => discovered.push(shadowRoot));
+  });
+
+  return [...new Set(discovered)];
+}
+
+function collectShadowRoots(root) {
+  const queue = [root];
+  const shadowRoots = [];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current?.querySelectorAll) {
+      continue;
+    }
+
+    current.querySelectorAll("*").forEach((element) => {
+      if (!element.shadowRoot) {
+        return;
+      }
+
+      shadowRoots.push(element.shadowRoot);
+      queue.push(element.shadowRoot);
+    });
+  }
+
+  return shadowRoots;
 }
 
 function applyHorizontalToDetectedElements() {
@@ -96,6 +132,13 @@ function applyHorizontalToDetectedElements() {
   const candidates = [];
 
   getCandidateRoots().forEach((root) => {
+    if (root.nodeType === Node.ELEMENT_NODE && root.matches?.(TARGET_SELECTORS)) {
+      if (!seen.has(root)) {
+        seen.add(root);
+        candidates.push(root);
+      }
+    }
+
     root.querySelectorAll(TARGET_SELECTORS).forEach((node) => {
       if (seen.has(node)) {
         return;
@@ -156,9 +199,18 @@ function startObserver() {
     scheduleApplyHorizontal();
   });
 
-  observer.observe(document.documentElement, {
-    childList: true,
-    subtree: true
+  const observeTarget = (target) => {
+    observer.observe(target, {
+      childList: true,
+      subtree: true
+    });
+  };
+
+  observeTarget(document.documentElement);
+  getCandidateRoots().forEach((root) => {
+    if (root instanceof ShadowRoot) {
+      observeTarget(root);
+    }
   });
 }
 
